@@ -19,8 +19,10 @@
 </head>
 <body>
     <h2>Твой ID: <span id="my-id" style="color: #075e54;">...</span></h2>
-    
-    <div id="chat"></div>
+<div style="display: flex; gap: 10px; margin-bottom: 20px;">
+    <button class="secondary-btn" onclick="copyMyID()">📋 Копировать ID</button>
+    <button class="secondary-btn" onclick="shareLink()">🔗 Ссылка для друга</button>
+</div>
 
     <div class="controls">
         <input type="text" id="remote-id" placeholder="ID друга">
@@ -37,4 +39,5 @@
 
     <script src="script.js"></script>
 </body>
+
 </html>
