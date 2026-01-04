@@ -1,40 +1,66 @@
-const peer = new Peer(); 
+// 1. Конфигурация с STUN-серверами для прохода через роутеры (NAT)
+const peer = new Peer({
+    config: {
+        'iceServers': [
+            { url: 'stun:stun.l.google.com:19302' },
+            { url: 'stun:stun1.l.google.com:19302' },
+            { url: 'stun:stun2.l.google.com:19302' },
+            { url: 'stun:stun3.l.google.com:19302' },
+            { url: 'stun:stun4.l.google.com:19302' }
+        ]
+    }
+});
+
 let conn;
 
-// 1. Получаем свой ID от сервера PeerJS
+// 2. Получение своего ID
 peer.on('open', (id) => {
+    console.log('Мой ID сгенерирован:', id);
     document.getElementById('my-id').innerText = id;
 });
 
-// 2. Ждем входящее соединение
+// Обработка ошибок самого PeerJS
+peer.on('error', (err) => {
+    console.error('Ошибка PeerJS:', err.type);
+    addMessage('Система: Ошибка сети (' + err.type + ')', 'system-msg');
+});
+
+// 3. Ждем входящее соединение
 peer.on('connection', (connection) => {
-    if (conn) conn.close(); // Защита от дублей
+    console.log('Входящее подключение от:', connection.peer);
+    if (conn) conn.close(); 
     conn = connection;
     setupChat();
 });
 
-// 3. Подключаемся к другу
+// 4. Кнопка "Установить связь"
 function connectToFriend() {
-    const remoteId = document.getElementById('remote-id').value;
-    if (!remoteId) return alert("Введите ID!");
+    const remoteId = document.getElementById('remote-id').value.trim();
+    if (!remoteId) return alert("Введите ID друга!");
     
+    console.log('Пытаюсь подключиться к:', remoteId);
     conn = peer.connect(remoteId);
     
     conn.on('open', () => {
-        // Отправляем секретное рукопожатие для проверки пароля
+        console.log('Соединение успешно открыто!');
         const pass = document.getElementById('chat-password').value;
         const authSignal = CryptoJS.AES.encrypt("AUTH_OK", pass).toString();
         conn.send({ type: 'auth', data: authSignal });
         setupChat();
     });
+
+    conn.on('error', (err) => {
+        console.error('Ошибка соединения:', err);
+        addMessage('Система: Не удалось соединиться.', 'system-msg');
+    });
 }
 
-// 4. Логика обработки данных
+// 5. Настройка логики данных
 function setupChat() {
     conn.on('data', (payload) => {
+        console.log('Получены данные типа:', payload.type);
         const pass = document.getElementById('chat-password').value;
 
-        // Обработка разных типов данных
         switch(payload.type) {
             case 'auth':
                 handleAuth(payload.data, pass);
@@ -48,18 +74,23 @@ function setupChat() {
         }
     });
 
-    conn.on('close', () => addMessage('Система: Связь потеряна', 'system-msg'));
+    conn.on('close', () => {
+        console.log('Соединение закрыто');
+        addMessage('Система: Связь разорвана', 'system-msg');
+    });
 }
 
-// --- Функции-обработчики ---
+// --- Обработчики безопасности ---
 
 function handleAuth(encryptedData, pass) {
     try {
         const decrypted = CryptoJS.AES.decrypt(encryptedData, pass).toString(CryptoJS.enc.Utf8);
         if (decrypted === "AUTH_OK") {
-            addMessage('Система: Канал защищен паролем', 'system-msg');
+            console.log('Пароли совпали!');
+            addMessage('Система: Защищенный канал установлен', 'system-msg');
         } else { throw new Error(); }
     } catch (e) {
+        console.error('Ошибка авторизации: неверный пароль');
         addMessage('Система: ОШИБКА ПАРОЛЯ!', 'system-msg');
         conn.close();
     }
@@ -69,7 +100,7 @@ function handleChatMessage(encryptedData, pass) {
     try {
         const msg = CryptoJS.AES.decrypt(encryptedData, pass).toString(CryptoJS.enc.Utf8);
         if (msg) addMessage('Друг: ' + msg);
-    } catch (e) { console.error("Ошибка текста"); }
+    } catch (e) { console.error("Ошибка расшифровки сообщения"); }
 }
 
 function handlePhotoMessage(encryptedData, pass) {
@@ -77,15 +108,12 @@ function handlePhotoMessage(encryptedData, pass) {
         const imgData = CryptoJS.AES.decrypt(encryptedData, pass).toString(CryptoJS.enc.Utf8);
         if (imgData.startsWith('data:image')) {
             addMessage('Друг прислал фото:');
-            const img = document.createElement('img');
-            img.src = imgData;
-            document.getElementById('chat').appendChild(img);
-            scrollToBottom();
+            addImageToChat(imgData);
         }
-    } catch (e) { addMessage('Система: Ошибка фото (пароль?)', 'system-msg'); }
+    } catch (e) { console.error("Ошибка расшифровки фото"); }
 }
 
-// --- Функции отправки ---
+// --- Отправка ---
 
 function sendMessage() {
     const input = document.getElementById('message-input');
@@ -95,6 +123,8 @@ function sendMessage() {
         conn.send({ type: 'chat', data: encrypted });
         addMessage('Ты: ' + input.value);
         input.value = '';
+    } else {
+        console.warn('Отправка невозможна: нет соединения');
     }
 }
 
@@ -109,16 +139,13 @@ function sendPhoto(input) {
         conn.send({ type: 'photo', data: encrypted });
         
         addMessage('Ты отправил фото:');
-        const img = document.createElement('img');
-        img.src = e.target.result;
-        document.getElementById('chat').appendChild(img);
-        scrollToBottom();
+        addImageToChat(e.target.result);
     };
     reader.readAsDataURL(file);
     input.value = '';
 }
 
-// --- Утилиты ---
+// --- Интерфейс ---
 
 function addMessage(text, className = '') {
     const chat = document.getElementById('chat');
@@ -126,10 +153,15 @@ function addMessage(text, className = '') {
     if (className) el.className = className;
     el.innerText = text;
     chat.appendChild(el);
-    scrollToBottom();
+    chat.scrollTop = chat.scrollHeight;
 }
 
-function scrollToBottom() {
+function addImageToChat(src) {
     const chat = document.getElementById('chat');
+    const img = document.createElement('img');
+    img.src = src;
+    img.style.maxWidth = '100%';
+    img.style.borderRadius = '8px';
+    chat.appendChild(img);
     chat.scrollTop = chat.scrollHeight;
 }
