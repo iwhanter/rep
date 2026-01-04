@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>P2P Private Safe Chat</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background: #e5ddd5; }
+        #chat { width: 400px; height: 500px; border: 1px solid #ccc; background: #fff; overflow-y: auto; margin-bottom: 10px; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .controls { display: flex; flex-direction: column; gap: 8px; width: 400px; }
+        input { padding: 10px; border: 1px solid #ddd; border-radius: 5px; outline: none; }
+        button { padding: 10px; cursor: pointer; background: #25d366; color: white; border: none; border-radius: 5px; font-weight: bold; }
+        button:hover { background: #128c7e; }
+        .secondary-btn { background: #6c757d; }
+        .system-msg { color: #888; font-size: 0.8em; text-align: center; margin: 5px 0; }
+        img { max-width: 100%; border-radius: 8px; margin-top: 5px; display: block; }
+    </style>
+</head>
+<body>
+    <h2>Твой ID: <span id="my-id" style="color: #075e54;">...</span></h2>
+    
+    <div id="chat"></div>
+
+    <div class="controls">
+        <input type="text" id="remote-id" placeholder="ID друга">
+        <input type="password" id="chat-password" placeholder="Пароль шифрования" value="12345">
+        <button onclick="connectToFriend()">Установить связь</button>
+        <hr>
+        <div style="display: flex; gap: 5px;">
+            <input type="text" id="message-input" placeholder="Сообщение..." style="flex: 1;">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="sendPhoto(this)">
+        <button class="secondary-btn" onclick="document.getElementById('file-input').click()">📷 Отправить фото</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
