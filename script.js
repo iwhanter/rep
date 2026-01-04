@@ -144,6 +144,32 @@ function sendPhoto(input) {
     reader.readAsDataURL(file);
     input.value = '';
 }
+// Функция 1: Простое копирование ID в буфер обмена
+function copyMyID() {
+    const myId = document.getElementById('my-id').innerText;
+    navigator.clipboard.writeText(myId);
+    alert("ID скопирован! Отправь его другу.");
+}
+
+// Функция 2: Создание ссылки, которая сама подставит ID
+function shareLink() {
+    const myId = document.getElementById('my-id').innerText;
+    // Создаем ссылку вида https://твой.сайт/?friendId=твой-айди
+    const shareUrl = window.location.origin + window.location.pathname + "?friendId=" + myId;
+    
+    navigator.clipboard.writeText(shareUrl);
+    alert("Ссылка с твоим ID скопирована! Другу достаточно просто перейти по ней.");
+}
+
+// Функция 3: Автозаполнение ID из ссылки при загрузке
+window.onload = function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const friendId = urlParams.get('friendId');
+    if (friendId) {
+        document.getElementById('remote-id').value = friendId;
+        addMessage('Система: ID друга получен из ссылки. Нажми "Установить связь".', 'system-msg');
+    }
+};
 
 // --- Интерфейс ---
 
@@ -165,3 +191,4 @@ function addImageToChat(src) {
     chat.appendChild(img);
     chat.scrollTop = chat.scrollHeight;
 }
+
