@@ -16,12 +16,8 @@ peer.on('open', (id) => {
     checkUrlParams();
 });
 
-// Исправление для PWA: обработка ошибок подключения
 peer.on('error', (err) => {
     console.error('PeerJS Error:', err);
-    if (err.type === 'peer-unavailable') {
-        alert('Собеседник недоступен (неверный ID или он офлайн)');
-    }
 });
 
 peer.on('connection', (connection) => {
@@ -33,12 +29,8 @@ peer.on('connection', (connection) => {
 function connectToFriend() {
     const remoteId = document.getElementById('remote-id').value.trim();
     if (!remoteId) return alert("Введите ID!");
-    
-    // Закрываем старое, если есть
     if (conn) conn.close();
-
     conn = peer.connect(remoteId);
-    
     conn.on('open', () => {
         const pass = document.getElementById('chat-password').value;
         const authSignal = CryptoJS.AES.encrypt("AUTH_OK", pass).toString();
@@ -52,7 +44,6 @@ function setupChat() {
     document.getElementById('chat-status').innerText = 'в сети';
     document.getElementById('chat-status').style.color = '#c6ffad';
 
-    // Heartbeat: отправляем сигнал каждые 10 сек, чтобы система не закрыла сокет
     if (heartbeat) clearInterval(heartbeat);
     heartbeat = setInterval(() => {
         if (conn && conn.open) {
@@ -65,11 +56,9 @@ function setupChat() {
     conn.on('data', (payload) => {
         if (payload.type === 'ping') return;
         const pass = document.getElementById('chat-password').value;
-        
         if (payload.id && payload.type !== 'ack') {
             conn.send({ type: 'ack', msgId: payload.id });
         }
-        
         switch(payload.type) {
             case 'auth': handleAuth(payload.data, pass); break;
             case 'chat': handleChatMessage(payload, pass); break;
@@ -95,6 +84,9 @@ function sendMessage() {
         conn.send({ type: 'chat', data: encrypted, id: msgId });
         addMessage(input.value, 'sent', null, msgId);
         input.value = '';
+        
+        // Фикс для клавиатуры: возвращаем фокус мгновенно
+        input.focus(); 
     }
 }
 
@@ -121,13 +113,10 @@ function addMessage(text, type = 'system-msg', imgSrc = null, msgId = null) {
     const chat = document.getElementById('chat');
     const el = document.createElement('div');
     el.className = type === 'system-msg' ? 'system-msg' : 'msg ' + type;
-    
     let time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
     if (type !== 'system-msg') {
         let statusHtml = (type === 'sent' && msgId) ? `<span class="status-check" id="status-${msgId}">✓</span>` : '';
         let footerHtml = `<div class="msg-footer"><span>${time}</span>${statusHtml}</div>`;
-        
         if (imgSrc) {
             el.classList.add('has-img');
             el.innerHTML = `<img src="${imgSrc}" onclick="openPhoto(this.src)">${footerHtml}`;
@@ -137,7 +126,6 @@ function addMessage(text, type = 'system-msg', imgSrc = null, msgId = null) {
     } else {
         el.innerText = text;
     }
-    
     chat.appendChild(el);
     chat.scrollTop = chat.scrollHeight;
 }
@@ -177,29 +165,37 @@ function handlePhotoMessage(payload, pass) {
     } catch (e) {}
 }
 
-function handleEnter(e) { if (e.key === 'Enter') sendMessage(); }
+function handleEnter(e) { 
+    if (e.key === 'Enter') {
+        e.preventDefault(); // Предотвращаем стандартный перенос строки
+        sendMessage(); 
+    }
+}
+
 function toggleSetup() {
     const s = document.getElementById('connection-setup');
     s.style.display = s.style.display === 'none' ? 'flex' : 'none';
 }
+
 function copyMyID() {
     const myId = document.getElementById('my-id').innerText;
     navigator.clipboard.writeText(myId);
     alert("ID скопирован!");
 }
+
 function shareLink() {
     const myId = document.getElementById('my-id').innerText;
     const shareUrl = window.location.origin + window.location.pathname + "?friendId=" + myId;
     navigator.clipboard.writeText(shareUrl);
     alert("Ссылка скопирована!");
 }
+
 function checkUrlParams() {
     const urlParams = new URLSearchParams(window.location.search);
     const friendId = urlParams.get('friendId');
     if (friendId) document.getElementById('remote-id').value = friendId;
 }
 
-// Регистрация SW
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
 }
