@@ -48,6 +48,10 @@ function connectToFriend() {
 
 // 5. Настройка чата и прием данных
 function setupChat() {
+    // СКРЫВАЕМ КНОПКИ ПОДКЛЮЧЕНИЯ ПОСЛЕ УСТАНОВКИ СВЯЗИ
+    const setupBlock = document.getElementById('connection-setup');
+    if (setupBlock) setupBlock.style.display = 'none';
+
     conn.on('data', (payload) => {
         const pass = document.getElementById('chat-password').value;
 
@@ -64,7 +68,10 @@ function setupChat() {
         }
     });
 
-    conn.on('close', () => addMessage('Система: Связь разорвана', 'system-msg'));
+    conn.on('close', () => {
+        addMessage('Система: Связь разорвана', 'system-msg');
+        if (setupBlock) setupBlock.style.display = 'flex'; // Возвращаем кнопки при обрыве
+    });
 }
 
 // --- Функции-помощники ---
@@ -125,19 +132,33 @@ function sendPhoto(input) {
     input.value = '';
 }
 
-// --- Функции автоматизации ID и ссылок ---
+// --- Функции автоматизации ID и ссылок (с фиксом для всех браузеров) ---
 
 function copyMyID() {
     const myId = document.getElementById('my-id').innerText;
-    navigator.clipboard.writeText(myId);
+    if (!myId || myId === "Загрузка...") return;
+
+    const el = document.createElement('textarea');
+    el.value = myId;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
     alert("ID скопирован!");
 }
 
 function shareLink() {
     const myId = document.getElementById('my-id').innerText;
+    if (!myId || myId === "Загрузка...") return;
+
     const shareUrl = window.location.origin + window.location.pathname + "?friendId=" + myId;
-    navigator.clipboard.writeText(shareUrl);
-    alert("Ссылка с твоим ID скопирована! Отправь её другу.");
+    const el = document.createElement('textarea');
+    el.value = shareUrl;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    alert("Ссылка с твоим ID скопирована!");
 }
 
 function checkUrlParams() {
