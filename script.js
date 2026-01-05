@@ -9,6 +9,8 @@ const peer = new Peer({
 });
 
 let conn;
+let lastRemoteId = null; // Для авто-реконнекта
+let heartbeatInterval;
 
 peer.on('open', (id) => {
     document.getElementById('my-id').innerText = id;
@@ -18,12 +20,14 @@ peer.on('open', (id) => {
 peer.on('connection', (connection) => {
     if (conn) conn.close(); 
     conn = connection;
+    lastRemoteId = connection.peer; // Запоминаем ID для восстановления
     setupChat();
 });
 
 function connectToFriend() {
     const remoteId = document.getElementById('remote-id').value.trim();
     if (!remoteId) return alert("Введите ID!");
+    lastRemoteId = remoteId;
     conn = peer.connect(remoteId);
     conn.on('open', () => {
         const pass = document.getElementById('chat-password').value;
@@ -38,7 +42,19 @@ function setupChat() {
     document.getElementById('chat-status').innerText = 'в сети';
     document.getElementById('chat-status').style.color = '#c6ffad';
 
+    // Очищаем старый интервал если был
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+    // Keep-alive: Пинг каждые 15 секунд
+    heartbeatInterval = setInterval(() => {
+        if (conn && conn.open) {
+            conn.send({ type: 'ping' });
+        }
+    }, 15000);
+
     conn.on('data', (payload) => {
+        if (payload.type === 'ping') return; // Игнорируем технические пинги
+
         const pass = document.getElementById('chat-password').value;
         if (payload.id && payload.type !== 'ack') {
             conn.send({ type: 'ack', msgId: payload.id });
@@ -52,9 +68,17 @@ function setupChat() {
     });
 
     conn.on('close', () => {
-        addMessage('Связь прервана', 'system-msg');
-        document.getElementById('chat-status').innerText = 'офлайн';
-        document.getElementById('connection-setup').style.display = 'flex';
+        clearInterval(heartbeatInterval);
+        document.getElementById('chat-status').innerText = 'соединение потеряно...';
+        document.getElementById('chat-status').style.color = '#ff9999';
+        
+        // Авто-реконнект через 3 секунды
+        setTimeout(() => {
+            if (lastRemoteId) {
+                console.log("Попытка восстановления связи с " + lastRemoteId);
+                connectToFriend();
+            }
+        }, 3000);
     });
 }
 
@@ -104,7 +128,6 @@ function addMessage(text, type = 'system-msg', imgSrc = null, msgId = null) {
             el.classList.add('has-img');
             el.innerHTML = `<img src="${imgSrc}" onclick="openPhoto(this.src)">${footerHtml}`;
         } else {
-            // ВАЖНО: Текст идет первым, чтобы футер мог обтекать его или уходить вниз
             el.innerHTML = `<span>${text}</span>${footerHtml}`;
         }
     } else {
