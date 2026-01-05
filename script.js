@@ -171,8 +171,3 @@ function checkUrlParams() {
     const friendId = urlParams.get('friendId');
     if (friendId) document.getElementById('remote-id').value = friendId;
 }
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {
-    // Просто заглушка для работы PWA
-  });
-}
