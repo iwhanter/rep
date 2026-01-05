@@ -84,22 +84,59 @@ function sendMessage() {
         conn.send({ type: 'chat', data: encrypted, id: msgId });
         addMessage(input.value, 'sent', null, msgId);
         input.value = '';
-        
-        // Фикс для клавиатуры: возвращаем фокус мгновенно
         input.focus(); 
     }
 }
 
+// НОВАЯ ФУНКЦИЯ: Сжатие и быстрая отправка фото
 function sendPhoto(input) {
     const file = input.files[0];
     if (!file || !conn) return;
+
+    // Показываем системное сообщение, что фото обрабатывается
+    const statusMsg = 'Обработка фото...';
+    addMessage(statusMsg, 'system-msg');
+
     const reader = new FileReader();
     reader.onload = function(e) {
-        const msgId = 'p' + Date.now();
-        const pass = document.getElementById('chat-password').value;
-        const encrypted = CryptoJS.AES.encrypt(e.target.result, pass).toString();
-        conn.send({ type: 'photo', data: encrypted, id: msgId });
-        addMessage('', 'sent', e.target.result, msgId);
+        const img = new Image();
+        img.onload = function() {
+            // Создаем холст для сжатия
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            // Ограничиваем максимальный размер (например, 1200px по большой стороне)
+            const MAX_SIZE = 1200;
+            if (width > height) {
+                if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+            } else {
+                if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Получаем сжатый JPEG (качество 0.7)
+            const compressedData = canvas.toDataURL('image/jpeg', 0.7);
+            
+            const msgId = 'p' + Date.now();
+            const pass = document.getElementById('chat-password').value;
+
+            // Теперь шифрование пройдет в разы быстрее, так как данных меньше
+            setTimeout(() => {
+                try {
+                    const encrypted = CryptoJS.AES.encrypt(compressedData, pass).toString();
+                    conn.send({ type: 'photo', data: encrypted, id: msgId });
+                    addMessage('', 'sent', compressedData, msgId);
+                } catch (err) {
+                    alert("Ошибка при шифровании файла");
+                }
+            }, 100);
+        };
+        img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
@@ -167,7 +204,7 @@ function handlePhotoMessage(payload, pass) {
 
 function handleEnter(e) { 
     if (e.key === 'Enter') {
-        e.preventDefault(); // Предотвращаем стандартный перенос строки
+        e.preventDefault(); 
         sendMessage(); 
     }
 }
