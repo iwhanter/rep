@@ -11,26 +11,31 @@ const peer = new Peer({
 let conn;
 let heartbeat;
 
-// --- СИСТЕМНОЕ ШИФРОВАНИЕ (WEB CRYPTO API) ---
+// --- ИСПРАВЛЕННОЕ ШИФРОВАНИЕ (WEB CRYPTO API) ---
 async function fastEncrypt(data, password) {
-    const encoder = new TextEncoder();
-    const pwHash = await crypto.subtle.digest('SHA-256', encoder.encode(password));
-    const key = await crypto.subtle.importKey('raw', pwHash, { name: 'AES-GCM' }, false, ['encrypt']);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    
-    // Если на входе строка (текст), превращаем в байты. Если уже массив (фото) - берем как есть.
-    const dataToEncrypt = typeof data === 'string' ? encoder.encode(data) : data;
-    
-    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, dataToEncrypt);
-    
-    return {
-        iv: Array.from(iv),
-        content: Array.from(new Uint8Array(encrypted))
-    };
+    try {
+        const encoder = new TextEncoder();
+        const pwHash = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+        const key = await crypto.subtle.importKey('raw', pwHash, { name: 'AES-GCM' }, false, ['encrypt']);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        
+        const dataToEncrypt = typeof data === 'string' ? encoder.encode(data) : data;
+        const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, dataToEncrypt);
+        
+        return {
+            iv: Array.from(iv),
+            content: Array.from(new Uint8Array(encrypted))
+        };
+    } catch (e) {
+        console.error("Encryption error:", e);
+        return null;
+    }
 }
 
 async function fastDecrypt(payload, password) {
     try {
+        if (!payload || !payload.iv || !payload.content) return null;
+        
         const encoder = new TextEncoder();
         const pwHash = await crypto.subtle.digest('SHA-256', encoder.encode(password));
         const key = await crypto.subtle.importKey('raw', pwHash, { name: 'AES-GCM' }, false, ['decrypt']);
@@ -40,9 +45,9 @@ async function fastDecrypt(payload, password) {
             key,
             new Uint8Array(payload.content)
         );
-        
-        return decrypted; // Возвращаем ArrayBuffer
+        return decrypted;
     } catch (e) {
+        console.error("Decryption error (possibly wrong password):", e);
         return null;
     }
 }
@@ -67,7 +72,7 @@ async function connectToFriend() {
     conn = peer.connect(remoteId);
     conn.on('open', async () => {
         const authData = await fastEncrypt("AUTH_OK", pass);
-        conn.send({ type: 'auth', data: authData });
+        if (authData) conn.send({ type: 'auth', data: authData });
         setupChat();
     });
 }
@@ -86,20 +91,22 @@ function setupChat() {
         if (payload.type === 'ping') return;
         const pass = document.getElementById('chat-password').value;
         
-        const decryptedBuffer = await fastDecrypt(payload.data, pass);
-        if (!decryptedBuffer) return;
+        // Расшифровываем только если есть данные
+        if (payload.data) {
+            const decryptedBuffer = await fastDecrypt(payload.data, pass);
+            if (!decryptedBuffer) return;
 
-        if (payload.type === 'auth') {
-            const text = new TextDecoder().decode(decryptedBuffer);
-            if (text === "AUTH_OK") addMessage('Шифрование активно', 'system-msg');
-        } else if (payload.type === 'chat') {
-            const text = new TextDecoder().decode(decryptedBuffer);
-            addMessage(text, 'received');
-        } else if (payload.type === 'photo') {
-            // Превращаем байты обратно в картинку без потери качества
-            const blob = new Blob([decryptedBuffer]);
-            const url = URL.createObjectURL(blob);
-            addMessage('', 'received', url);
+            if (payload.type === 'auth') {
+                const text = new TextDecoder().decode(decryptedBuffer);
+                if (text === "AUTH_OK") addMessage('Шифрование активно', 'system-msg');
+            } else if (payload.type === 'chat') {
+                const text = new TextDecoder().decode(decryptedBuffer);
+                addMessage(text, 'received');
+            } else if (payload.type === 'photo') {
+                const blob = new Blob([decryptedBuffer]);
+                const url = URL.createObjectURL(blob);
+                addMessage('', 'received', url);
+            }
         }
     });
 
@@ -110,17 +117,19 @@ function setupChat() {
     });
 }
 
-// --- ОТПРАВКА СООБЩЕНИЙ ---
+// --- ОТПРАВКА ---
 async function sendMessage() {
     const input = document.getElementById('message-input');
     const pass = document.getElementById('chat-password').value;
     if (conn && conn.open && input.value) {
         const text = input.value;
         const encrypted = await fastEncrypt(text, pass);
-        conn.send({ type: 'chat', data: encrypted });
-        addMessage(text, 'sent');
-        input.value = '';
-        input.focus();
+        if (encrypted) {
+            conn.send({ type: 'chat', data: encrypted });
+            addMessage(text, 'sent');
+            input.value = '';
+            input.focus();
+        }
     }
 }
 
@@ -128,17 +137,20 @@ async function sendPhoto(input) {
     const file = input.files[0];
     if (!file || !conn) return;
 
-    addMessage('Отправка файла...', 'system-msg');
-    
+    addMessage('Обработка фото...', 'system-msg');
     const pass = document.getElementById('chat-password').value;
-    const arrayBuffer = await file.arrayBuffer(); // Берем файл как есть (бинарно)
     
-    const encrypted = await fastEncrypt(new Uint8Array(arrayBuffer), pass);
-    conn.send({ type: 'photo', data: encrypted });
-    
-    // Для себя отображаем локальный URL, чтобы не тратить память
-    const localUrl = URL.createObjectURL(file);
-    addMessage('', 'sent', localUrl);
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const encrypted = await fastEncrypt(new Uint8Array(arrayBuffer), pass);
+        if (encrypted) {
+            conn.send({ type: 'photo', data: encrypted });
+            const localUrl = URL.createObjectURL(file);
+            addMessage('', 'sent', localUrl);
+        }
+    } catch (e) {
+        addMessage('Ошибка при отправке фото', 'system-msg');
+    }
 }
 
 // --- ИНТЕРФЕЙСНЫЕ ФУНКЦИИ ---
@@ -167,13 +179,13 @@ function toggleSetup() {
     s.style.display = s.style.display === 'none' ? 'flex' : 'none';
 }
 function copyMyID() {
-    navigator.clipboard.writeText(document.getElementById('my-id').innerText);
-    alert("ID скопирован!");
+    const id = document.getElementById('my-id').innerText;
+    navigator.clipboard.writeText(id).then(() => alert("ID скопирован!"));
 }
 function shareLink() {
-    const url = window.location.origin + window.location.pathname + "?friendId=" + document.getElementById('my-id').innerText;
-    navigator.clipboard.writeText(url);
-    alert("Ссылка скопирована!");
+    const id = document.getElementById('my-id').innerText;
+    const url = window.location.origin + window.location.pathname + "?friendId=" + id;
+    navigator.clipboard.writeText(url).then(() => alert("Ссылка скопирована!"));
 }
 function checkUrlParams() {
     const id = new URLSearchParams(window.location.search).get('friendId');
