@@ -9,10 +9,19 @@ const peer = new Peer({
 });
 
 let conn;
+let heartbeat;
 
 peer.on('open', (id) => {
     document.getElementById('my-id').innerText = id;
     checkUrlParams();
+});
+
+// Исправление для PWA: обработка ошибок подключения
+peer.on('error', (err) => {
+    console.error('PeerJS Error:', err);
+    if (err.type === 'peer-unavailable') {
+        alert('Собеседник недоступен (неверный ID или он офлайн)');
+    }
 });
 
 peer.on('connection', (connection) => {
@@ -24,7 +33,12 @@ peer.on('connection', (connection) => {
 function connectToFriend() {
     const remoteId = document.getElementById('remote-id').value.trim();
     if (!remoteId) return alert("Введите ID!");
+    
+    // Закрываем старое, если есть
+    if (conn) conn.close();
+
     conn = peer.connect(remoteId);
+    
     conn.on('open', () => {
         const pass = document.getElementById('chat-password').value;
         const authSignal = CryptoJS.AES.encrypt("AUTH_OK", pass).toString();
@@ -38,17 +52,24 @@ function setupChat() {
     document.getElementById('chat-status').innerText = 'в сети';
     document.getElementById('chat-status').style.color = '#c6ffad';
 
-    // Heartbeat для стабильности на Android/iOS
-    const heartbeat = setInterval(() => {
-        if (conn && conn.open) conn.send({ type: 'ping' });
-    }, 15000);
+    // Heartbeat: отправляем сигнал каждые 10 сек, чтобы система не закрыла сокет
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = setInterval(() => {
+        if (conn && conn.open) {
+            conn.send({ type: 'ping' });
+        } else {
+            clearInterval(heartbeat);
+        }
+    }, 10000);
 
     conn.on('data', (payload) => {
         if (payload.type === 'ping') return;
         const pass = document.getElementById('chat-password').value;
+        
         if (payload.id && payload.type !== 'ack') {
             conn.send({ type: 'ack', msgId: payload.id });
         }
+        
         switch(payload.type) {
             case 'auth': handleAuth(payload.data, pass); break;
             case 'chat': handleChatMessage(payload, pass); break;
@@ -178,7 +199,7 @@ function checkUrlParams() {
     if (friendId) document.getElementById('remote-id').value = friendId;
 }
 
-// Регистрация в системе для работы как приложение
+// Регистрация SW
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
 }
